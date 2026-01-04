@@ -2,47 +2,38 @@
 
 # -------- Telegram Config --------
 CONFIG_FILE="/home/neo/.config/telebot/bot.conf"
-
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "Telegram config not found: $CONFIG_FILE" >&2
   exit 1
 fi
-
 . "$CONFIG_FILE"
 
-
-# -------- CPU Average Load (1 minute) --------
-CPU_LOAD=$(/usr/bin/cut -d' ' -f1 /proc/loadavg)
-
-LOAD_EMOJI=$(awk -v l="$CPU_LOAD" '
-BEGIN {
-  if (l < 1.0) print "🟢";
-  else if (l < 3.0) print "🟡";
-  else print "🔴";
-}')
+# -------- CPU Average Load --------
+read LOAD_1 LOAD_5 LOAD_15 _ < /proc/loadavg
+CPU_LOAD="$LOAD_1 | $LOAD_5 | $LOAD_15"
 
 # -------- CPU Temperature --------
-CPU_TEMP_RAW=$(cat /sys/class/thermal/thermal_zone0/hwmon0/temp1_input 2>/dev/null)
-[ -n "$CPU_TEMP_RAW" ] && CPU_TEMP=$(awk "BEGIN { printf \"%.1f\", $CPU_TEMP_RAW/1000 }") || CPU_TEMP="N/A"
+CPU0_RAW=$(cat /sys/class/thermal/thermal_zone1/temp)
+CPU1_RAW=$(cat /sys/class/thermal/thermal_zone2/temp)
+CPU_MAX_RAW=$(( CPU0_RAW > CPU1_RAW ? CPU0_RAW : CPU1_RAW ))
+CPU_TEMP=$(awk "BEGIN { printf \"%.1f\", $CPU_MAX_RAW/1000 }")
+
+# -------- SOC Temperature --------
+SOC_TEMP_RAW=$(cat /sys/class/thermal/thermal_zone0/temp)
+SOC_TEMP=$(awk "BEGIN { printf \"%.1f\", $SOC_TEMP_RAW/1000 }")
 
 # -------- Battery --------
 BAT=$(cat /sys/class/power_supply/qcom-battery/capacity 2>/dev/null || echo "N/A")
 BAT_STATUS=$(cat /sys/class/power_supply/qcom-battery/status 2>/dev/null || echo "Unknown")
 
 # -------- Battery Temperature --------
-BAT_TEMP_RAW=$(cat /sys/class/power_supply/qcom-battery/temp 2>/dev/null)
-[ -n "$BAT_TEMP_RAW" ] && BAT_TEMP=$(awk "BEGIN { printf \"%.1f\", $BAT_TEMP_RAW/10 }") || BAT_TEMP="N/A"
-
-# -------- Charging Indicator --------
-BAT_STATUS_ICON=""
-case "$BAT_STATUS" in
-  "Charging") BAT_STATUS_ICON="⚡" ;;
-  "Full")     BAT_STATUS_ICON="✔️" ;;
-esac
+BAT_TEMP_RAW=$(cat /sys/class/power_supply/qcom-battery/temp)
+BAT_TEMP=$(awk "BEGIN { printf \"%.1f\", $BAT_TEMP_RAW/10 }")
 
 # -------- Memory --------
-MEM_USED=$(free -m | awk '/Mem:/ { printf "%.2f", $3/1024 }')
-MEM_TOTAL=$(free -m | awk '/Mem:/ { printf "%.2f", $2/1024 }')
+read MEM_TOTAL MEM_USED <<EOF
+$(free -m | awk '/Mem:/ { print $2, $3 }')
+EOF
 
 # -------- Uptime --------
 UPTIME=$(awk '{ 
@@ -54,11 +45,15 @@ UPTIME=$(awk '{
 
 # -------- Message --------
 MSG='```
-⚙️ Load (1m)  —  '"$CPU_LOAD   $LOAD_EMOJI"'
-🌡️ Temp       —  '"${CPU_TEMP}°C"'
-🔋 Battery    —  '"${BAT}% | ${BAT_TEMP}°C  ${BAT_STATUS_ICON}"'
-💾 RAM        —  '"${MEM_USED}GB / ${MEM_TOTAL}GB"'
-🕒 Uptime     —  '"$UPTIME"'
+⚙️ Load            —  '"${CPU_LOAD}"'
+🌡️ CPU Temp        —  '"${CPU_TEMP}°C"'
+🌡️ SOC Temp        —  '"${SOC_TEMP}°C"'
+
+🔋 Battery         —  '"${BAT}% | ${BAT_TEMP}°C"'
+🔋 Battery Status  —  '"${BAT_STATUS}"'
+
+💾 RAM             —  '"${MEM_USED}MB / ${MEM_TOTAL}MB"'
+🕒 Uptime          —  '"${UPTIME}"'
 ```'
 
 # -------- Send --------
