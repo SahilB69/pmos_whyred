@@ -1,0 +1,2 @@
+# Plex Media Server
+add rule inet filter input tcp dport 32400 accept
